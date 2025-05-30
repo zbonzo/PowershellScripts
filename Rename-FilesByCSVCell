@@ -1,0 +1,61 @@
+function Rename-FilesByCSVCell {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Directory,
+        [Parameter(Mandatory=$true)] [string]$SourcePattern,
+        [Parameter(Mandatory=$true)] [int]$Row,
+        [Parameter(Mandatory=$true)] [int]$Column,
+        [Parameter(Mandatory=$true)] [string]$CellPattern,
+        [Parameter(Mandatory=$true)] [string]$DateFormat,
+        [Parameter(Mandatory=$true)] [string]$ReplacementPattern
+    )
+
+    Get-ChildItem -Path $Directory -Filter $SourcePattern | ForEach-Object {
+        $file = $_
+
+        # Read CSV as plain text
+        $csvLines = Get-Content $file.FullName
+
+        if ($Row -ge $csvLines.Count) {
+            Write-Warning "Row $Row not found in file $($file.Name). Skipping."
+            return
+        }
+
+        $cells = $csvLines[$Row] -split ','
+
+        if ($Column -ge $cells.Count) {
+            Write-Warning "Column $Column not found in file $($file.Name). Skipping."
+            return
+        }
+
+        $targetCell = $cells[$Column].Trim('"', ' ')
+
+        if ($targetCell -match $CellPattern) {
+            $matchedValue = $matches[1]
+
+            # Attempt date parsing if needed
+            try {
+                $formattedValue = [DateTime]::ParseExact($matchedValue, $DateFormat, $null).ToString('yyyyMMdd')
+            }
+            catch {
+                Write-Warning "Date format mismatch in $($file.Name). Skipping."
+                return
+            }
+
+            if ($file.BaseName -match $ReplacementPattern) {
+                $newFileName = $file.BaseName -replace $ReplacementPattern, "$`${1}$formattedValue$`${2}" + $file.Extension
+                Rename-Item -Path $file.FullName -NewName $newFileName
+                Write-Host "Renamed $($file.Name) to $newFileName"
+            }
+            else {
+                Write-Warning "Filename pattern mismatch: $($file.Name). Skipping."
+            }
+        }
+        else {
+            Write-Warning "Cell pattern mismatch in $($file.Name). Skipping."
+        }
+    }
+}
+
+Export-ModuleMember -Function Rename-FilesByCSVCell
+# Example Usage:
+# Rename-FilesByCSVCell -Directory "C:\csvfiles" -SourcePattern "*.csv" -Row 4 -Column 1 -CellPattern "(\d{1,2}/\d{1,2}/\d{4})" -DateFormat "M/d/yyyy" -ReplacementPattern "^(.*?-.*?-)\d{8}(.*)$"
